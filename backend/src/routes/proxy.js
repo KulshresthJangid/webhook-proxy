@@ -37,7 +37,10 @@ router.all('/*', async (req, res, next) => {
     // 2. Resolve Application Config
     const app = await Application.findOne({ 
       userId: user._id, 
-      appType: appType.toLowerCase() 
+      $or: [
+        { appType: appType.toLowerCase() },
+        { name: { $regex: new RegExp('^' + appType.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&') + '$', 'i') } }
+      ]
     });
 
     if (!app) {
