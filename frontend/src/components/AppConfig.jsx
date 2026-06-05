@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Plus, Edit3, Trash2, Copy, Check, ExternalLink, X, Settings } from 'lucide-react';
 
-export default function AppConfig({ apps, onSave, onDelete, onShowAlert }) {
+export default function AppConfig({ apps, user, onSave, onDelete, onShowAlert }) {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingApp, setEditingApp] = useState(null);
   const [copiedId, setCopiedId] = useState(null);
@@ -54,7 +54,7 @@ export default function AppConfig({ apps, onSave, onDelete, onShowAlert }) {
   };
 
   const handleCopyEndpoint = (slug, id) => {
-    const fullUrl = `${window.location.origin}/webhook/${slug}`;
+    const fullUrl = `${window.location.origin}/webhook/${user.username}/${slug}`;
     navigator.clipboard.writeText(fullUrl);
     setCopiedId(id);
     onShowAlert('success', 'Webhook URL copied to clipboard');
@@ -136,7 +136,7 @@ export default function AppConfig({ apps, onSave, onDelete, onShowAlert }) {
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                         <span className="badge badge-warning" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem' }}>
-                          /webhook/{app.appType}
+                          /webhook/{user.username}/{app.appType}
                         </span>
                         <button 
                           className="btn btn-secondary btn-sm" 
@@ -223,7 +223,7 @@ export default function AppConfig({ apps, onSave, onDelete, onShowAlert }) {
                     disabled={!!editingApp}
                     required
                   />
-                  <span className="form-helper">This defines the URL path: /webhook/&lt;slug&gt;</span>
+                  <span className="form-helper">This defines the URL path: /webhook/{user.username}/&lt;slug&gt;</span>
                 </div>
               </div>
 

@@ -6,6 +6,12 @@ const headerSchema = new mongoose.Schema({
 }, { _id: false });
 
 const applicationSchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
   name: {
     type: String,
     required: true,
@@ -14,7 +20,6 @@ const applicationSchema = new mongoose.Schema({
   appType: {
     type: String,
     required: true,
-    unique: true,
     lowercase: true,
     trim: true,
     match: [/^[a-z0-9-_]+$/, 'appType must contain only alphanumeric characters, dashes, and underscores'],
@@ -42,5 +47,8 @@ const applicationSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
+
+// Enforce unique route slug per user
+applicationSchema.index({ userId: 1, appType: 1 }, { unique: true });
 
 module.exports = mongoose.model('Application', applicationSchema);

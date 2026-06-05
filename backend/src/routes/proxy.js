@@ -1,31 +1,58 @@
 const express = require('express');
 const router = express.Router();
+const User = require('../models/User');
 const Application = require('../models/Application');
 const { forwardWebhook } = require('./forwarder');
 
-// Match base endpoint and any sub-path (using regex wildcard in express)
-router.all('/:appType*', async (req, res, next) => {
-  const { appType } = req.params;
+// Match any request under /webhook
+router.all('/*', async (req, res, next) => {
+  // Parse paths manually to be robust against Express route wildcard quirks
+  // req.path is path after /webhook. Example: /john/stripe/payment/success
+  const pathParts = req.path.split('/').filter(p => p !== '');
   
-  // Reserve 'api' and 'dashboard' paths so they can fall through to the API router and static file server
-  if (appType && (appType.toLowerCase() === 'api' || appType.toLowerCase() === 'dashboard')) {
+  if (pathParts.length < 2) {
+    // If it's just /webhook or /webhook/dashboard or /webhook/api
+    const firstPart = pathParts[0]?.toLowerCase();
+    if (firstPart === 'api' || firstPart === 'dashboard') {
+      return next();
+    }
+    return res.status(400).json({ error: 'Invalid webhook endpoint format. Expected /webhook/:username/:appType' });
+  }
+
+  const username = pathParts[0];
+  const appType = pathParts[1];
+
+  // Reserve 'api' and 'dashboard' namespaces so they fall through
+  if (username.toLowerCase() === 'api' || username.toLowerCase() === 'dashboard') {
     return next();
   }
-  
+
   try {
-    // Find application config
-    const app = await Application.findOne({ appType: appType.toLowerCase() });
-    if (!app) {
-      return res.status(404).json({ error: `No configuration found for app type: ${appType}` });
+    // 1. Resolve User
+    const user = await User.findOne({ username: username.toLowerCase() });
+    if (!user) {
+      return res.status(444).json({ error: `User account "${username}" not found.` }); // 444 custom status
     }
-    
+
+    // 2. Resolve Application Config
+    const app = await Application.findOne({ 
+      userId: user._id, 
+      appType: appType.toLowerCase() 
+    });
+
+    if (!app) {
+      return res.status(404).json({ error: `No configuration found for app type "${appType}" under user "${username}"` });
+    }
+
     if (!app.isActive) {
       return res.status(403).json({ error: `Webhook proxy for ${app.name} is currently inactive` });
     }
-    
-    // Extract subpath from req.params[0] (which matches the wildcard '*' in Express)
-    const urlPath = req.params[0] || '/';
-    
+
+    // 3. Extract sub-path (anything after /:username/:appType)
+    // Example: parts are ['john', 'stripe', 'payment', 'success'] -> slice(2) is ['payment', 'success']
+    const subPathParts = pathParts.slice(2);
+    const urlPath = subPathParts.length > 0 ? '/' + subPathParts.join('/') : '/';
+
     const reqInfo = {
       method: req.method,
       urlPath,
@@ -33,21 +60,20 @@ router.all('/:appType*', async (req, res, next) => {
       query: req.query,
       body: req.body
     };
-    
-    // Forward the webhook synchronously and log it
+
+    // 4. Forward the webhook synchronously and log it
     const log = await forwardWebhook(app, reqInfo);
-    
-    // Respond back to the sender with the status from the target application,
-    // plus metadata about the delivery attempt.
+
+    // Respond back to the sender with the status from the target application
     res.status(log.responseStatus || 502).json({
       deliveryId: log._id,
       deliveryStatus: log.deliveryStatus,
       targetStatus: log.responseStatus,
       latencyMs: log.latencyMs
     });
-    
+
   } catch (error) {
-    console.error(`Error in webhook proxy route for ${appType}:`, error);
+    console.error(`Error in webhook proxy route for /${username}/${appType}:`, error);
     res.status(500).json({ error: 'Internal server error processing webhook' });
   }
 });

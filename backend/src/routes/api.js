@@ -3,30 +3,19 @@ const router = express.Router();
 const Application = require('../models/Application');
 const WebhookLog = require('../models/WebhookLog');
 const { forwardWebhook } = require('./forwarder');
-const config = require('../config');
+const { requireAuth } = require('./auth');
 
-// Middleware to authenticate requests to the admin API
-const adminAuth = (req, res, next) => {
-  if (config.ADMIN_API_KEY) {
-    const key = req.headers['x-api-key'] || req.query.apiKey;
-    if (key !== config.ADMIN_API_KEY) {
-      return res.status(401).json({ error: 'Unauthorized: Invalid or missing API Key' });
-    }
-  }
-  next();
-};
-
-// Apply auth middleware to all API routes
-router.use(adminAuth);
+// Apply requireAuth authentication middleware to all API routes
+router.use(requireAuth);
 
 /* -------------------------------------------------------------------------- */
 /*                          Application Configurations                        */
 /* -------------------------------------------------------------------------- */
 
-// GET all applications
+// GET all applications for current user
 router.get('/apps', async (req, res) => {
   try {
-    const apps = await Application.find().sort({ createdAt: -1 });
+    const apps = await Application.find({ userId: req.user._id }).sort({ createdAt: -1 });
     res.json(apps);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -38,6 +27,7 @@ router.post('/apps', async (req, res) => {
   const { name, appType, targetUrl, isActive, headers, retryConfig } = req.body;
   try {
     const app = new Application({
+      userId: req.user._id,
       name,
       appType,
       targetUrl,
@@ -49,7 +39,7 @@ router.post('/apps', async (req, res) => {
     res.status(201).json(app);
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ error: `Application type "${appType}" is already in use.` });
+      return res.status(400).json({ error: `Application type "${appType}" is already registered on your account.` });
     }
     res.status(400).json({ error: error.message });
   }
@@ -60,9 +50,9 @@ router.put('/apps/:id', async (req, res) => {
   const { id } = req.params;
   const { name, appType, targetUrl, isActive, headers, retryConfig } = req.body;
   try {
-    const app = await Application.findById(id);
+    const app = await Application.findOne({ _id: id, userId: req.user._id });
     if (!app) {
-      return res.status(404).json({ error: 'Application not found' });
+      return res.status(404).json({ error: 'Application route config not found' });
     }
 
     app.name = name !== undefined ? name : app.name;
@@ -76,7 +66,7 @@ router.put('/apps/:id', async (req, res) => {
     res.json(app);
   } catch (error) {
     if (error.code === 11000) {
-      return res.status(400).json({ error: `Application type "${appType}" is already in use.` });
+      return res.status(400).json({ error: `Application type "${appType}" is already registered on your account.` });
     }
     res.status(400).json({ error: error.message });
   }
@@ -86,12 +76,12 @@ router.put('/apps/:id', async (req, res) => {
 router.delete('/apps/:id', async (req, res) => {
   const { id } = req.params;
   try {
-    const app = await Application.findByIdAndDelete(id);
+    const app = await Application.findOneAndDelete({ _id: id, userId: req.user._id });
     if (!app) {
-      return res.status(404).json({ error: 'Application not found' });
+      return res.status(404).json({ error: 'Application route config not found' });
     }
-    // Delete all associated logs
-    await WebhookLog.deleteMany({ applicationId: id });
+    // Delete only associated logs belonging to this user
+    await WebhookLog.deleteMany({ applicationId: id, userId: req.user._id });
     res.json({ message: `Successfully deleted application "${app.name}" and all its logs.` });
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -109,7 +99,8 @@ router.get('/logs', async (req, res) => {
   const limit = parseInt(req.query.limit) || 20;
   const skip = (page - 1) * limit;
 
-  const query = {};
+  // Enforce scoping to req.user._id
+  const query = { userId: req.user._id };
   
   if (req.query.applicationId) {
     query.applicationId = req.query.applicationId;
@@ -145,7 +136,8 @@ router.get('/logs', async (req, res) => {
 router.post('/logs/:id/retry', async (req, res) => {
   const { id } = req.params;
   try {
-    const log = await WebhookLog.findById(id).populate('applicationId');
+    // Check ownership of the log
+    const log = await WebhookLog.findOne({ _id: id, userId: req.user._id }).populate('applicationId');
     if (!log) {
       return res.status(404).json({ error: 'Webhook log entry not found' });
     }
@@ -155,7 +147,6 @@ router.post('/logs/:id/retry', async (req, res) => {
       return res.status(400).json({ error: 'The parent application for this log has been deleted.' });
     }
 
-    // Reconstruct the request parameters
     const reqInfo = {
       method: log.method,
       urlPath: log.url,
@@ -164,7 +155,6 @@ router.post('/logs/:id/retry', async (req, res) => {
       body: log.body
     };
 
-    // Forward webhook, passing the same log record to append attempts
     const updatedLog = await forwardWebhook(app, reqInfo, log);
 
     res.json({
@@ -184,12 +174,13 @@ router.post('/logs/:id/retry', async (req, res) => {
 
 router.get('/stats', async (req, res) => {
   try {
-    // Total count of apps
-    const totalApps = await Application.countDocuments();
-    const activeApps = await Application.countDocuments({ isActive: true });
+    // Total count of apps for current user
+    const totalApps = await Application.countDocuments({ userId: req.user._id });
+    const activeApps = await Application.countDocuments({ userId: req.user._id, isActive: true });
 
-    // Aggregated stats from WebhookLogs
+    // Aggregated stats from WebhookLogs scoped to current user
     const logsStats = await WebhookLog.aggregate([
+      { $match: { userId: req.user._id } },
       {
         $group: {
           _id: null,
@@ -219,11 +210,13 @@ router.get('/stats', async (req, res) => {
     // Webhooks in last 24 hours
     const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const webhooksLast24h = await WebhookLog.countDocuments({
+      userId: req.user._id,
       timestamp: { $gte: oneDayAgo }
     });
 
     // App-by-app success rates
     const appBreakdown = await WebhookLog.aggregate([
+      { $match: { userId: req.user._id } },
       {
         $group: {
           _id: '$applicationId',
@@ -239,8 +232,8 @@ router.get('/stats', async (req, res) => {
       }
     ]);
 
-    // Populate app details manually from DB or map them
-    const apps = await Application.find({}, 'name appType');
+    // Populate app details manually from DB
+    const apps = await Application.find({ userId: req.user._id }, 'name appType');
     const appMap = {};
     apps.forEach(a => {
       appMap[a._id.toString()] = { name: a.name, appType: a.appType };
@@ -260,6 +253,62 @@ router.get('/stats', async (req, res) => {
       };
     });
 
+    // --- 7-Day Daily Traffic Trend Graph ---
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+    sevenDaysAgo.setHours(0, 0, 0, 0);
+
+    const trafficTrendAggregation = await WebhookLog.aggregate([
+      {
+        $match: {
+          userId: req.user._id,
+          timestamp: { $gte: sevenDaysAgo }
+        }
+      },
+      {
+        $group: {
+          _id: {
+            $dateToString: { format: "%Y-%m-%d", date: "$timestamp" }
+          },
+          count: { $sum: 1 },
+          successCount: {
+            $sum: { $cond: [{ $eq: ['$deliveryStatus', 'success'] }, 1, 0] }
+          },
+          failedCount: {
+            $sum: { $cond: [{ $eq: ['$deliveryStatus', 'failed'] }, 1, 0] }
+          }
+        }
+      },
+      { $sort: { _id: 1 } }
+    ]);
+
+    // Construct full 7-day series in JS (to fill in days with 0 traffic)
+    const trendMap = {};
+    trafficTrendAggregation.forEach(t => {
+      trendMap[t._id] = {
+        total: t.count,
+        success: t.successCount,
+        failed: t.failedCount
+      };
+    });
+
+    const trend = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const label = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      
+      const dayStats = trendMap[dateStr] || { total: 0, success: 0, failed: 0 };
+      trend.push({
+        date: dateStr,
+        label,
+        total: dayStats.total,
+        success: dayStats.success,
+        failed: dayStats.failed
+      });
+    }
+
     res.json({
       overview: {
         totalApps,
@@ -271,7 +320,8 @@ router.get('/stats', async (req, res) => {
         avgLatencyMs: Math.round(stats.avgLatency || 0),
         webhooksLast24h
       },
-      appBreakdown: breakdownWithDetails
+      appBreakdown: breakdownWithDetails,
+      trend
     });
 
   } catch (error) {

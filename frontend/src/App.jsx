@@ -1,13 +1,20 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Layout, Activity, Layers, ServerCrash, Key } from 'lucide-react';
+import { Layout, Activity, Layers, ServerCrash, LogOut, User as UserIcon } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import AppConfig from './components/AppConfig';
 import Logs from './components/Logs';
 import Alert from './components/Alert';
+import Login from './components/Login';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem('webhook_proxy_api_key') || '');
+  
+  // Auth States
+  const [token, setToken] = useState(() => localStorage.getItem('webhook_proxy_token') || '');
+  const [user, setUser] = useState(() => {
+    const saved = localStorage.getItem('webhook_proxy_user');
+    return saved ? JSON.parse(saved) : null;
+  });
   
   // Data States
   const [apps, setApps] = useState([]);
@@ -28,6 +35,16 @@ export default function App() {
     setAlert({ type, message });
   }, []);
 
+  const handleLogout = useCallback(() => {
+    setToken('');
+    setUser(null);
+    localStorage.removeItem('webhook_proxy_token');
+    localStorage.removeItem('webhook_proxy_user');
+    setApps([]);
+    setStats(null);
+    setLogs([]);
+  }, []);
+
   // Helper function for API requests
   const apiRequest = useCallback(async (path, options = {}) => {
     const url = `/webhook/api${path}`;
@@ -36,14 +53,15 @@ export default function App() {
       ...options.headers,
     };
     
-    if (apiKey) {
-      headers['x-api-key'] = apiKey;
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
     }
 
     try {
       const response = await fetch(url, { ...options, headers });
       if (response.status === 401) {
-        showAlert('error', 'Unauthorized: Invalid or missing API key. Configure it in the sidebar.');
+        handleLogout();
+        showAlert('error', 'Session expired or unauthorized. Please log in again.');
         throw new Error('Unauthorized');
       }
       
@@ -56,37 +74,42 @@ export default function App() {
       console.error(`API Error on ${path}:`, error);
       throw error;
     }
-  }, [apiKey, showAlert]);
+  }, [token, handleLogout, showAlert]);
 
-  // Save API key
-  const handleApiKeyChange = (e) => {
-    const val = e.target.value;
-    setApiKey(val);
-    localStorage.setItem('webhook_proxy_api_key', val);
+  const handleLoginSuccess = (newToken, newUser) => {
+    setToken(newToken);
+    setUser(newUser);
+    localStorage.setItem('webhook_proxy_token', newToken);
+    localStorage.setItem('webhook_proxy_user', JSON.stringify(newUser));
+    showAlert('success', `Logged in successfully as ${newUser.username}!`);
+    setActiveTab('dashboard');
   };
 
   // Fetch applications
   const fetchApps = useCallback(async () => {
+    if (!token) return;
     try {
       const data = await apiRequest('/apps');
       setApps(data);
     } catch (err) {
       // Handled by apiRequest
     }
-  }, [apiRequest]);
+  }, [token, apiRequest]);
 
   // Fetch stats
   const fetchStats = useCallback(async () => {
+    if (!token) return;
     try {
       const data = await apiRequest('/stats');
       setStats(data);
     } catch (err) {
       // Handled by apiRequest
     }
-  }, [apiRequest]);
+  }, [token, apiRequest]);
 
   // Fetch logs
   const fetchLogs = useCallback(async () => {
+    if (!token) return;
     try {
       let query = `?page=${logPage}&limit=15`;
       if (selectedApp) query += `&applicationId=${selectedApp}`;
@@ -98,29 +121,30 @@ export default function App() {
     } catch (err) {
       // Handled by apiRequest
     }
-  }, [apiRequest, logPage, selectedApp, selectedStatus]);
+  }, [token, apiRequest, logPage, selectedApp, selectedStatus]);
 
   // Refresh active tab data
   const refreshData = useCallback(() => {
+    if (!token) return;
     fetchApps();
     if (activeTab === 'dashboard') {
       fetchStats();
     } else if (activeTab === 'logs') {
       fetchLogs();
     }
-  }, [activeTab, fetchApps, fetchStats, fetchLogs]);
+  }, [token, activeTab, fetchApps, fetchStats, fetchLogs]);
 
   // Fetch initial data and setup polling
   useEffect(() => {
+    if (!token) return;
     refreshData();
     
-    // Setup background polling (every 5 seconds) to keep dashboard/logs fresh
     const interval = setInterval(() => {
       refreshData();
     }, 5000);
 
     return () => clearInterval(interval);
-  }, [refreshData]);
+  }, [token, refreshData]);
 
   // CRUD Actions
   const handleSaveApp = async (id, appData) => {
@@ -191,6 +215,16 @@ export default function App() {
     }
   };
 
+  // If not logged in, render the login/signup portal
+  if (!token || !user) {
+    return (
+      <>
+        <Login onLoginSuccess={handleLoginSuccess} />
+        <Alert alert={alert} onClose={() => setAlert(null)} />
+      </>
+    );
+  }
+
   return (
     <div className="app-container">
       {/* Decorative blobs */}
@@ -230,24 +264,41 @@ export default function App() {
           </li>
         </ul>
 
-        {/* API Key Panel (For authorization) */}
+        {/* User Account Info and Logout */}
         <div className="auth-panel">
-          <div className="auth-title">
-            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <Key size={12} />
-              <span>Admin Security</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '12px' }}>
+            <div style={{
+              width: '32px',
+              height: '32px',
+              borderRadius: '50%',
+              background: 'var(--primary-glow)',
+              color: 'var(--primary)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '0.9rem',
+              fontWeight: 700,
+              textTransform: 'uppercase'
+            }}>
+              {user.username.charAt(0)}
+            </div>
+            <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                {user.username}
+              </div>
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>
+                {user.email}
+              </div>
             </div>
           </div>
-          <div className="auth-input-container">
-            <input 
-              type="password" 
-              className="auth-input" 
-              placeholder="Enter API Key..."
-              value={apiKey}
-              onChange={handleApiKeyChange}
-              title="Enter matching ADMIN_API_KEY if configured in backend"
-            />
-          </div>
+          <button 
+            className="btn btn-secondary btn-sm" 
+            onClick={handleLogout}
+            style={{ width: '100%', justifyContent: 'center', display: 'flex', gap: '8px' }}
+          >
+            <LogOut size={14} />
+            <span>Log Out</span>
+          </button>
         </div>
       </aside>
 
@@ -256,6 +307,7 @@ export default function App() {
         {activeTab === 'dashboard' && stats && (
           <Dashboard 
             stats={stats} 
+            user={user}
             onViewLogsOfApp={(appId) => {
               setSelectedApp(appId);
               setActiveTab('logs');
@@ -266,6 +318,7 @@ export default function App() {
         {activeTab === 'routes' && (
           <AppConfig 
             apps={apps}
+            user={user}
             onSave={handleSaveApp}
             onDelete={handleDeleteApp}
             onShowAlert={showAlert}

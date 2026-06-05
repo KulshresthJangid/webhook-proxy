@@ -1,7 +1,9 @@
-import React from 'react';
-import { Activity, CheckCircle, AlertOctagon, Clock, Layers } from 'lucide-react';
+import React, { useState } from 'react';
+import { Activity, CheckCircle, AlertOctagon, Clock, Layers, Copy, Check, Info } from 'lucide-react';
 
-export default function Dashboard({ stats, onViewLogsOfApp }) {
+export default function Dashboard({ stats, user, onViewLogsOfApp }) {
+  const [copied, setCopied] = useState(false);
+
   const overview = stats?.overview || {
     totalApps: 0,
     activeApps: 0,
@@ -14,17 +16,68 @@ export default function Dashboard({ stats, onViewLogsOfApp }) {
   };
 
   const appBreakdown = stats?.appBreakdown || [];
+  const trend = stats?.trend || [];
 
   // Calculate success rate safely
   const successRate = overview.totalWebhooks > 0 
     ? Math.round((overview.successCount / overview.totalWebhooks) * 100) 
     : 0;
 
-  // Custom Chart Data: Find max count to scale the bars
+  // Custom Chart Data: Find max counts to scale bars
   const maxWebhookCount = Math.max(...appBreakdown.map(app => app.total), 1);
+  const maxTrendCount = Math.max(...trend.map(day => day.total), 1);
+
+  const baseWebhookUrl = `${window.location.origin}/webhook/${user.username}`;
+
+  const handleCopyBaseUrl = () => {
+    navigator.clipboard.writeText(baseWebhookUrl);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
 
   return (
     <div className="dashboard-view">
+      {/* Welcome Banner and URL Info */}
+      <div className="card" style={{ marginBottom: '32px', padding: '24px', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px', zIndex: 5, position: 'relative' }}>
+          <div>
+            <h2 style={{ fontSize: '1.4rem', fontWeight: 800, letterSpacing: '-0.5px', marginBottom: '4px' }}>
+              Welcome back, {user.username}!
+            </h2>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+              Here is the traffic summary for your EchoRoute webhook endpoints.
+            </p>
+          </div>
+          
+          <div style={{ 
+            background: 'rgba(0, 0, 0, 0.25)', 
+            border: '1px solid var(--border-color)', 
+            borderRadius: 'var(--radius-sm)', 
+            padding: '12px 18px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px'
+          }}>
+            <div style={{ fontSize: '0.8rem' }}>
+              <div style={{ color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', fontSize: '0.65rem', letterSpacing: '0.5px', marginBottom: '2px' }}>
+                Your Webhook Root URL
+              </div>
+              <code style={{ color: 'var(--primary)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                {baseWebhookUrl}/:appType
+              </code>
+            </div>
+            <button 
+              className="btn btn-secondary btn-sm"
+              onClick={handleCopyBaseUrl}
+              style={{ padding: '6px 8px', minWidth: '40px', justifyContent: 'center' }}
+              title="Copy base URL to clipboard"
+            >
+              {copied ? <Check size={14} style={{ color: 'var(--color-success)' }} /> : <Copy size={14} />}
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* Stats Cards */}
       <div className="stats-grid">
         <div className="stat-card">
@@ -64,7 +117,76 @@ export default function Dashboard({ stats, onViewLogsOfApp }) {
         </div>
       </div>
 
-      {/* Main Stats Charts & Breakdown Section */}
+      {/* 7-Day Traffic Trend Graph */}
+      <div className="card" style={{ marginBottom: '32px' }}>
+        <div className="card-title">
+          <span>7-Day Daily Traffic Trend</span>
+          <span style={{ fontSize: '0.8rem', fontWeight: 500, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-success)' }}></span> Success
+            </span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: 'var(--color-danger)' }}></span> Failed
+            </span>
+          </span>
+        </div>
+        {trend.length === 0 || trend.every(d => d.total === 0) ? (
+          <div className="empty-state" style={{ padding: '32px' }}>
+            <Activity className="empty-state-icon" size={32} />
+            <h3>No traffic recorded in the last 7 days</h3>
+            <p>Once webhooks hit your endpoints, traffic trend lines will display here.</p>
+          </div>
+        ) : (
+          <div className="chart-container" style={{ height: '220px', paddingLeft: '10px', paddingRight: '10px' }}>
+            {trend.map((day, index) => {
+              const heightPercentage = Math.max(8, Math.round((day.total / maxTrendCount) * 100));
+              const successHeight = day.total > 0 ? Math.round((day.success / day.total) * 100) : 0;
+              const failedHeight = day.total > 0 ? Math.round((day.failed / day.total) * 100) : 0;
+              
+              return (
+                <div key={day.date || index} className="chart-bar-wrapper">
+                  <div 
+                    className="chart-bar-fill" 
+                    style={{ 
+                      height: `${heightPercentage}%`, 
+                      minHeight: '20px',
+                      width: '32px',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      overflow: 'hidden',
+                      background: 'rgba(255, 255, 255, 0.05)',
+                      border: '1px solid rgba(255, 255, 255, 0.08)'
+                    }}
+                  >
+                    {/* Success segment */}
+                    <div style={{
+                      height: `${successHeight}%`,
+                      width: '100%',
+                      background: 'var(--success-gradient)'
+                    }}></div>
+                    {/* Failed segment */}
+                    <div style={{
+                      height: `${failedHeight}%`,
+                      width: '100%',
+                      background: 'var(--danger-gradient)'
+                    }}></div>
+                    
+                    <div className="chart-tooltip">
+                      <strong>{day.label}</strong><br/>
+                      Total: {day.total}<br/>
+                      <span style={{ color: 'var(--color-success)' }}>Success: {day.success}</span><br/>
+                      <span style={{ color: 'var(--color-danger)' }}>Failed: {day.failed}</span>
+                    </div>
+                  </div>
+                  <span className="chart-label" style={{ fontSize: '0.75rem', marginTop: '4px' }}>{day.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Split details layout */}
       <div className="charts-section">
         {/* Webhook Volume Chart */}
         <div className="card">
@@ -116,7 +238,7 @@ export default function Dashboard({ stats, onViewLogsOfApp }) {
                 <div key={app.applicationId || index} className="app-breakdown-item">
                   <div className="app-breakdown-info">
                     <span className="app-breakdown-name">{app.name}</span>
-                    <span className="app-breakdown-slug">/webhook/{app.appType}</span>
+                    <span className="app-breakdown-slug">/webhook/{user.username}/{app.appType}</span>
                   </div>
                   <div className="app-breakdown-metrics">
                     <span className={`app-breakdown-rate ${app.successRate >= 90 ? 'badge-success' : app.successRate >= 50 ? 'badge-warning' : 'badge-danger'} badge`}>

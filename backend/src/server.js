@@ -6,6 +6,7 @@ const config = require('./config');
 
 const proxyRouter = require('./routes/proxy');
 const apiRouter = require('./routes/api');
+const { router: authRouter } = require('./routes/auth');
 
 const app = express();
 
@@ -33,6 +34,9 @@ app.use((req, res, next) => {
 // 3. Register Routes
 // Webhook proxy endpoints (Dynamic routing)
 app.use('/webhook', proxyRouter);
+
+// Authentication endpoints
+app.use('/webhook/api/auth', authRouter);
 
 // Admin / Dashboard configuration endpoints (Moved under /webhook/api to prevent Nginx conflict)
 app.use('/webhook/api', apiRouter);

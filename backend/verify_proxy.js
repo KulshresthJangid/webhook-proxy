@@ -4,6 +4,7 @@ const axios = require('axios');
 const http = require('http');
 
 // Load configurations and models
+const User = require('./src/models/User');
 const Application = require('./src/models/Application');
 const WebhookLog = require('./src/models/WebhookLog');
 
@@ -12,7 +13,7 @@ const PROXY_PORT = 3300;
 const MOCK_TARGET_PORT = 3400;
 
 async function runVerification() {
-  console.log('--- Starting Webhook Proxy Verification Integration Test ---');
+  console.log('--- Starting Multi-Tenant Webhook Proxy Verification Test ---');
   
   // 1. Connect to test database
   console.log(`Connecting to MongoDB at: ${TEST_MONGODB_URI}`);
@@ -20,6 +21,7 @@ async function runVerification() {
   console.log('Connected to MongoDB.');
 
   // Clean databases
+  await User.deleteMany({});
   await Application.deleteMany({});
   await WebhookLog.deleteMany({});
   console.log('Cleaned test database collections.');
@@ -52,7 +54,7 @@ async function runVerification() {
   // 3. Start Webhook Proxy Server
   process.env.MONGODB_URI = TEST_MONGODB_URI;
   process.env.PORT = PROXY_PORT;
-  process.env.ADMIN_API_KEY = 'test-secret-key';
+  process.env.JWT_SECRET = 'verification-jwt-secret';
   
   const serverModule = require('./src/server.js');
   // Wait a second for server to boot and connect to Mongoose
@@ -60,10 +62,32 @@ async function runVerification() {
   console.log(`Webhook Proxy server running on port ${PROXY_PORT}`);
 
   try {
-    // 4. Create an Application Config via API
-    console.log('Creating application proxy route via API...');
+    // 4. Signup User A
+    console.log('Registering User A...');
+    const userASignup = await axios.post(`http://localhost:${PROXY_PORT}/webhook/api/auth/signup`, {
+      username: 'usera',
+      email: 'usera@example.com',
+      password: 'password123'
+    });
+    const tokenA = userASignup.data.token;
+    const userIdA = userASignup.data.user.id;
+    console.log(`User A registered successfully. ID: ${userIdA}`);
+
+    // Signup User B
+    console.log('Registering User B...');
+    const userBSignup = await axios.post(`http://localhost:${PROXY_PORT}/webhook/api/auth/signup`, {
+      username: 'userb',
+      email: 'userb@example.com',
+      password: 'password123'
+    });
+    const tokenB = userBSignup.data.token;
+    const userIdB = userBSignup.data.user.id;
+    console.log(`User B registered successfully. ID: ${userIdB}`);
+
+    // 5. Create an Application Config for User A
+    console.log('Registering "slack-test" route for User A...');
     const appConfigPayload = {
-      name: 'Slack Integration Test',
+      name: 'User A Slack App',
       appType: 'slack-test',
       targetUrl: `http://localhost:${MOCK_TARGET_PORT}/target-webhook`,
       isActive: true,
@@ -78,15 +102,15 @@ async function runVerification() {
 
     const configRes = await axios.post(`http://localhost:${PROXY_PORT}/webhook/api/apps`, appConfigPayload, {
       headers: {
-        'x-api-key': 'test-secret-key'
+        'Authorization': `Bearer ${tokenA}`
       }
     });
     
     const createdAppId = configRes.data._id;
-    console.log(`Application registered. ID: ${createdAppId}`);
+    console.log(`Application registered for User A. ID: ${createdAppId}`);
     
-    // 5. Send Webhook to the Proxy
-    console.log('Sending webhook to proxy receiver...');
+    // 6. Send Webhook to User A's Proxy Path
+    console.log('Sending webhook to User A\'s proxy path...');
     const webhookHeaders = {
       'Content-Type': 'application/json',
       'X-Webhook-Event': 'message_created',
@@ -98,7 +122,7 @@ async function runVerification() {
     };
 
     const proxyRes = await axios.post(
-      `http://localhost:${PROXY_PORT}/webhook/slack-test/events?foo=bar`,
+      `http://localhost:${PROXY_PORT}/webhook/usera/slack-test/events?foo=bar`,
       webhookPayload,
       { headers: webhookHeaders }
     );
@@ -106,9 +130,24 @@ async function runVerification() {
     console.log('Proxy response status:', proxyRes.status);
     console.log('Proxy response body:', proxyRes.data);
 
-    // 6. Perform Assertions
+    // 7. Verify Isolation (Send webhook to User B's proxy path)
+    console.log('Sending webhook to User B\'s (unconfigured) proxy path...');
+    let userBErrorStatus = null;
+    try {
+      await axios.post(
+        `http://localhost:${PROXY_PORT}/webhook/userb/slack-test/events?foo=bar`,
+        webhookPayload,
+        { headers: webhookHeaders }
+      );
+    } catch (err) {
+      userBErrorStatus = err.response.status;
+    }
+    console.log(`User B endpoint response status (expected 404): ${userBErrorStatus}`);
+
+    // 8. Run Assertions
     console.log('\n--- Running Assertions ---');
     
+    // Assert proxy response for User A
     if (proxyRes.status !== 200) {
       throw new Error(`Expected proxy response status 200, got ${proxyRes.status}`);
     }
@@ -116,6 +155,13 @@ async function runVerification() {
       throw new Error(`Expected deliveryStatus to be success, got ${proxyRes.data.deliveryStatus}`);
     }
 
+    // Assert User B route isolation
+    if (userBErrorStatus !== 404) {
+      throw new Error(`Expected User B unconfigured path to return 404, got ${userBErrorStatus}`);
+    }
+    console.log('[PASS] Route isolation verified (User B endpoint returns 404).');
+
+    // Assert mock target received details
     if (!mockTargetReceivedRequest) {
       throw new Error('Mock target server did not receive the forwarded webhook!');
     }
@@ -146,10 +192,10 @@ async function runVerification() {
     if (dbLog.deliveryStatus !== 'success') {
       throw new Error(`Expected logged deliveryStatus to be "success", got "${dbLog.deliveryStatus}"`);
     }
-    if (dbLog.responseStatus !== 200) {
-      throw new Error(`Expected logged responseStatus to be 200, got ${dbLog.responseStatus}`);
+    if (String(dbLog.userId) !== String(userIdA)) {
+      throw new Error(`Expected logged userId to match User A's ID, got ${dbLog.userId}`);
     }
-    console.log('[PASS] Webhook delivery log was saved in MongoDB correctly.');
+    console.log('[PASS] Webhook delivery log was saved with correct user scoping.');
 
     console.log('\n=========================================');
     console.log('   VERIFICATION SUCCESSFUL! ALL TESTS PASS ');

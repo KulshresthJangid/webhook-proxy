@@ -102,6 +102,7 @@ async function forwardWebhook(app, reqInfo, logRecord = null) {
     
     currentLog = new WebhookLog({
       applicationId: app._id,
+      userId: app.userId,
       method: reqInfo.method,
       url: reqInfo.urlPath || '/',
       headers: reqInfo.headers,

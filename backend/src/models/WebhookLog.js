@@ -15,6 +15,12 @@ const webhookLogSchema = new mongoose.Schema({
     required: true,
     index: true
   },
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true,
+    index: true
+  },
   timestamp: {
     type: Date,
     default: Date.now,
