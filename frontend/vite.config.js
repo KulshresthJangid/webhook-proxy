@@ -8,11 +8,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/webhook/api': {
-        target: 'http://localhost:3005',
+        target: 'http://localhost:3550',
         changeOrigin: true,
       },
       '/webhook': {
-        target: 'http://localhost:3005',
+        target: 'http://localhost:3550',
         changeOrigin: true,
       }
     }

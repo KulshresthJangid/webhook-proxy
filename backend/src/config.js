@@ -5,7 +5,7 @@ const path = require('path');
 dotenv.config({ path: path.join(__dirname, '../.env') });
 
 module.exports = {
-  PORT: process.env.PORT || 3000,
+  PORT: process.env.PORT || 3550,
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://localhost:27017/webhook-proxy',
   ADMIN_API_KEY: process.env.ADMIN_API_KEY || '', // If empty, authentication is disabled
 };
