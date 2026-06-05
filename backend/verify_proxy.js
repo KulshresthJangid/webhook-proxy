@@ -76,7 +76,7 @@ async function runVerification() {
       }
     };
 
-    const configRes = await axios.post(`http://localhost:${PROXY_PORT}/api/apps`, appConfigPayload, {
+    const configRes = await axios.post(`http://localhost:${PROXY_PORT}/webhook/api/apps`, appConfigPayload, {
       headers: {
         'x-api-key': 'test-secret-key'
       }

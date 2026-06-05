@@ -30,7 +30,7 @@ export default function App() {
 
   // Helper function for API requests
   const apiRequest = useCallback(async (path, options = {}) => {
-    const url = `/api${path}`;
+    const url = `/webhook/api${path}`;
     const headers = {
       'Content-Type': 'application/json',
       ...options.headers,

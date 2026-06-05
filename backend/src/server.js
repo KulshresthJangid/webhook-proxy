@@ -34,18 +34,15 @@ app.use((req, res, next) => {
 // Webhook proxy endpoints (Dynamic routing)
 app.use('/webhook', proxyRouter);
 
-// Admin / Dashboard configuration endpoints
-app.use('/api', apiRouter);
+// Admin / Dashboard configuration endpoints (Moved under /webhook/api to prevent Nginx conflict)
+app.use('/webhook/api', apiRouter);
 
-// 4. Serve Static Frontend Files in Production
+// 4. Serve Static Frontend Files in Production (Moved under /webhook/dashboard)
 const frontendBuildPath = path.join(__dirname, '../../frontend/dist');
-app.use(express.static(frontendBuildPath));
+app.use('/webhook/dashboard', express.static(frontendBuildPath));
 
-// Fallback all other routes (except API/webhook) to index.html for React Router
-app.get('*', (req, res, next) => {
-  if (req.url.startsWith('/api') || req.url.startsWith('/webhook')) {
-    return next();
-  }
+// Fallback all sub-routes under /webhook/dashboard to index.html for React Router
+app.get('/webhook/dashboard*', (req, res) => {
   res.sendFile(path.join(frontendBuildPath, 'index.html'));
 });
 
@@ -63,7 +60,8 @@ mongoose.connect(config.MONGODB_URI)
     app.listen(config.PORT, () => {
       console.log(`Webhook Proxy server running on port ${config.PORT}`);
       console.log(`- Webhook receiver base path: http://localhost:${config.PORT}/webhook/:appType`);
-      console.log(`- Management dashboard backend: http://localhost:${config.PORT}/api`);
+      console.log(`- Management dashboard URL:   http://localhost:${config.PORT}/webhook/dashboard`);
+      console.log(`- Dashboard configuration API: http://localhost:${config.PORT}/webhook/api`);
     });
   })
   .catch((err) => {

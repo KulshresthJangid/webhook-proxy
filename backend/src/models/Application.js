@@ -17,7 +17,13 @@ const applicationSchema = new mongoose.Schema({
     unique: true,
     lowercase: true,
     trim: true,
-    match: [/^[a-z0-9-_]+$/, 'appType must contain only alphanumeric characters, dashes, and underscores']
+    match: [/^[a-z0-9-_]+$/, 'appType must contain only alphanumeric characters, dashes, and underscores'],
+    validate: {
+      validator: function(v) {
+        return !['api', 'dashboard'].includes(v.toLowerCase());
+      },
+      message: props => `Route slug "${props.value}" is reserved and cannot be used.`
+    }
   },
   targetUrl: {
     type: String,

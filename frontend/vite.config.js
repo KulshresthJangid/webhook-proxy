@@ -4,9 +4,10 @@ import react from '@vitejs/plugin-react'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
+  base: '/webhook/dashboard/',
   server: {
     proxy: {
-      '/api': {
+      '/webhook/api': {
         target: 'http://localhost:3005',
         changeOrigin: true,
       },

@@ -4,8 +4,13 @@ const Application = require('../models/Application');
 const { forwardWebhook } = require('./forwarder');
 
 // Match base endpoint and any sub-path (using regex wildcard in express)
-router.all('/:appType*', async (req, res) => {
+router.all('/:appType*', async (req, res, next) => {
   const { appType } = req.params;
+  
+  // Reserve 'api' and 'dashboard' paths so they can fall through to the API router and static file server
+  if (appType && (appType.toLowerCase() === 'api' || appType.toLowerCase() === 'dashboard')) {
+    return next();
+  }
   
   try {
     // Find application config
