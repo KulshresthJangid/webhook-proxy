@@ -8,7 +8,7 @@ const User = require('./src/models/User');
 const Application = require('./src/models/Application');
 const WebhookLog = require('./src/models/WebhookLog');
 
-const TEST_MONGODB_URI = 'mongodb://chargemyev:chargemyev123@127.0.0.1:27017/webhook-proxy-test?authSource=admin';
+const TEST_MONGODB_URI = 'mongodb://admin:dog8homework%3F@127.0.0.1:27017/webhook-proxy-test?authSource=admin';
 const PROXY_PORT = 3300;
 const MOCK_TARGET_PORT = 3400;
 
