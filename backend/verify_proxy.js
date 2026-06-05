@@ -1,3 +1,7 @@
+const dotenv = require('dotenv');
+const path = require('path');
+dotenv.config({ path: path.join(__dirname, '.env') });
+
 const mongoose = require('mongoose');
 const express = require('express');
 const axios = require('axios');
@@ -8,7 +12,10 @@ const User = require('./src/models/User');
 const Application = require('./src/models/Application');
 const WebhookLog = require('./src/models/WebhookLog');
 
-const TEST_MONGODB_URI = 'mongodb://admin:dog8homework%3F@127.0.0.1:27017/webhook-proxy-test?authSource=admin';
+const baseUri = process.env.MONGODB_URI || 'mongodb://admin:dog8homework%3F@127.0.0.1:27017/webhook-proxy?authSource=admin';
+const TEST_MONGODB_URI = baseUri.includes('/webhook-proxy') 
+  ? baseUri.replace('/webhook-proxy', '/webhook-proxy-test')
+  : baseUri + '-test';
 const PROXY_PORT = 3300;
 const MOCK_TARGET_PORT = 3400;
 
