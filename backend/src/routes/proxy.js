@@ -64,13 +64,18 @@ router.all('/*', async (req, res, next) => {
     // 4. Forward the webhook synchronously and log it
     const log = await forwardWebhook(app, reqInfo);
 
-    // Respond back to the sender with the status from the target application
-    res.status(log.responseStatus || 502).json({
-      deliveryId: log._id,
-      deliveryStatus: log.deliveryStatus,
-      targetStatus: log.responseStatus,
-      latencyMs: log.latencyMs
-    });
+    // Respond back to the sender
+    if (req.method === 'GET' && (req.query['hub.challenge'] || req.query['hub_challenge'])) {
+      // It's a Facebook/Meta webhook verification challenge
+      res.status(log.responseStatus || 200).send(log.responseBody);
+    } else {
+      res.status(log.responseStatus || 502).json({
+        deliveryId: log._id,
+        deliveryStatus: log.deliveryStatus,
+        targetStatus: log.responseStatus,
+        latencyMs: log.latencyMs
+      });
+    }
 
   } catch (error) {
     console.error(`Error in webhook proxy route for /${username}/${appType}:`, error);
