@@ -7,6 +7,7 @@ const config = require('./config');
 const proxyRouter = require('./routes/proxy');
 const apiRouter = require('./routes/api');
 const { router: authRouter } = require('./routes/auth');
+const User = require('./models/User');
 
 const app = express();
 
@@ -57,10 +58,29 @@ app.use((err, req, res, next) => {
 });
 
 // 5. Connect to MongoDB and start Server
+const seedAdminUser = async () => {
+  try {
+    const adminExists = await User.findOne({ username: 'admin' });
+    if (!adminExists) {
+      console.log('Seeding default admin user...');
+      const admin = new User({
+        username: 'admin',
+        email: 'admin@echoroute.local',
+        password: 'dog8homework' // Model will auto-hash this password on save
+      });
+      await admin.save();
+      console.log('Default admin user successfully seeded.');
+    }
+  } catch (error) {
+    console.error('Error seeding admin user:', error);
+  }
+};
+
 console.log('Connecting to MongoDB...');
 mongoose.connect(config.MONGODB_URI)
-  .then(() => {
+  .then(async () => {
     console.log('Successfully connected to MongoDB.');
+    await seedAdminUser();
     app.listen(config.PORT, () => {
       console.log(`Webhook Proxy server running on port ${config.PORT}`);
       console.log(`- Webhook receiver base path: http://localhost:${config.PORT}/webhook/:appType`);
