@@ -27,6 +27,8 @@ const UPSTREAM_PATHS = {
   generate: '/api/generate',
   chat: '/api/chat',
   tags: '/api/tags',
+  chatCompletions: '/v1/chat/completions',
+  models: '/v1/models',
 };
 
 async function forwardToOllama(req, res, method, upstreamPath) {
@@ -55,5 +57,9 @@ async function forwardToOllama(req, res, method, upstreamPath) {
 router.post('/generate', requireApiKey, (req, res) => forwardToOllama(req, res, 'post', UPSTREAM_PATHS.generate));
 router.post('/chat', requireApiKey, (req, res) => forwardToOllama(req, res, 'post', UPSTREAM_PATHS.chat));
 router.get('/tags', requireApiKey, (req, res) => forwardToOllama(req, res, 'get', UPSTREAM_PATHS.tags));
+
+// OpenAI-compatible passthrough, for tools (e.g. OpenCode) that speak the OpenAI API shape
+router.post('/v1/chat/completions', requireApiKey, (req, res) => forwardToOllama(req, res, 'post', UPSTREAM_PATHS.chatCompletions));
+router.get('/v1/models', requireApiKey, (req, res) => forwardToOllama(req, res, 'get', UPSTREAM_PATHS.models));
 
 module.exports = router;
