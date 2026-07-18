@@ -3,6 +3,16 @@
 # Exit immediately if a command exits with a non-zero status
 set -e
 
+# Parse flags
+RESET_DB=false
+for arg in "$@"; do
+    case "$arg" in
+        --reset-db)
+            RESET_DB=true
+            ;;
+    esac
+done
+
 echo "================================================="
 echo "      Deploying EchoRoute Webhook Proxy Server   "
 echo "================================================="
@@ -22,6 +32,13 @@ echo ""
 echo "--- Step 2: Installing backend dependencies ---"
 cd "$SCRIPT_DIR/backend"
 npm install
+
+# 2.5 Reset admin user if requested
+if [ "$RESET_DB" = true ]; then
+    echo ""
+    echo "--- Step 2.5: Resetting admin user (--reset-db passed) ---"
+    node src/resetAdmin.js
+fi
 
 # 3. Set up PM2 Command
 echo ""

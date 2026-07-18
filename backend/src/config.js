@@ -9,5 +9,7 @@ module.exports = {
   MONGODB_URI: process.env.MONGODB_URI || 'mongodb://admin:dog8homework%3F@127.0.0.1:27017/webhook-proxy?authSource=admin',
   ADMIN_API_KEY: process.env.ADMIN_API_KEY || '', // If empty, authentication is disabled
   JWT_SECRET: process.env.JWT_SECRET || 'echoroute-super-secret-key-change-in-production',
+  OLLAMA_URL: process.env.OLLAMA_URL || 'http://127.0.0.1:11434',
+  OLLAMA_PROXY_API_KEY: process.env.OLLAMA_PROXY_API_KEY || '',
 };
 

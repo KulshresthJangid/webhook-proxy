@@ -7,6 +7,7 @@ const config = require('./config');
 const proxyRouter = require('./routes/proxy');
 const apiRouter = require('./routes/api');
 const { router: authRouter } = require('./routes/auth');
+const ollamaRouter = require('./routes/ollama');
 const User = require('./models/User');
 
 const app = express();
@@ -41,6 +42,9 @@ app.use('/webhook/api/auth', authRouter);
 
 // Admin / Dashboard configuration endpoints (Moved under /webhook/api to prevent Nginx conflict)
 app.use('/webhook/api', apiRouter);
+
+// Ollama LLM proxy endpoints (API-key gated)
+app.use('/ai', ollamaRouter);
 
 // 4. Serve Static Frontend Files in Production (Moved under /webhook/dashboard)
 const frontendBuildPath = path.join(__dirname, '../../frontend/dist');
